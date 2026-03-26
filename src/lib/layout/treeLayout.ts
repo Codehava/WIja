@@ -118,33 +118,69 @@ export interface LayoutConfig {
     siblingStackThreshold: number; // L9: max children before grid layout
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// LAYOUT RULES — Bottom-Up Order (Node → Cluster → Tree → Canvas)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// 🟢 Level 1: NODE-LEVEL (Individual Person)
+//   R1: sortByBirthDate     — Sort children by birth date (eldest first)
+//   R2: spouseOrdering      — Husband-wife layout ordering
+//   R3: multiSpouseMode     — Multi-spouse ordering strategy
+//
+// 🔵 Level 2: CLUSTER-LEVEL (Family Unit / Couple)
+//   R4: centerParent        — Center parent above children
+//   R5: siblingStacking     — Grid layout for large sibling sets
+//   R6: cycleBreaking       — Handle pedigree collapse (cousin marriages)
+//
+// 🟣 Level 3: TREE-LEVEL (Whole Tree Structure)
+//   R7: generationAlignment — Y-level alignment for same generation
+//   R8: overlapResolution   — Per-row overlap fix
+//   R9: compactApportioning — Proportional subtree shifting to fill gaps
+//   R10: crossLineageGrouping — Group cross-lineage trees together
+//   R11: largestGroupFirst  — Biggest root group placed first
+//   R12: groupPacking       — Bin-pack disconnected groups in rows
+//
+// 🟠 Level 4: CANVAS-LEVEL (Global Output)
+//   R13: layoutMode         — Layout strategy (standard / hourglass)
+//   R14: showOrphans        — Show unlinked persons in grid
+//   R15: normalizePositions — Normalize coordinates to top-left origin
+//
+
 export interface LayoutRules {
-    sortByBirthDate: boolean;    // R3: sort children by birth date
-    centerParent: boolean;       // R4: center parent above children
-    crossLineageGrouping: boolean; // R7: group cross-lineage trees
-    overlapResolution: boolean;  // R6: per-row overlap fix
-    spouseOrdering: boolean;     // R2: husband-wife ordering rules
-    largestGroupFirst: boolean;  // R5: largest root group placed first
-    showOrphans: boolean;        // R8: show orphan nodes in grid
-    normalizePositions: boolean; // R9: normalize coordinates to top-left
-    compactApportioning: boolean;   // R10: proportional subtree shifting to fill gaps
-    cycleBreaking: 'off' | 'clone' | 'crosslink'; // R11: pedigree collapse handling
-    multiSpouseMode: 'default' | 'chronological' | 'childCount'; // R12: multi-spouse grouping
-    generationAlignment: 'strict' | 'loose'; // R13: generation Y alignment mode
-    siblingStacking: boolean;       // R14: grid layout for large sibling sets
-    groupPacking: boolean;          // R15: bin-pack disconnected groups
+    // 🟢 Node-Level
+    sortByBirthDate: boolean;       // R1: sort children by birth date
+    spouseOrdering: boolean;        // R2: husband-wife ordering rules
+    multiSpouseMode: 'default' | 'chronological' | 'childCount'; // R3: multi-spouse grouping
+
+    // 🔵 Cluster-Level
+    centerParent: boolean;          // R4: center parent above children
+    siblingStacking: boolean;       // R5: grid layout for large sibling sets
+    cycleBreaking: 'off' | 'clone' | 'crosslink'; // R6: pedigree collapse handling
+
+    // 🟣 Tree-Level
+    generationAlignment: 'strict' | 'loose'; // R7: generation Y alignment mode
+    overlapResolution: boolean;     // R8: per-row overlap fix
+    compactApportioning: boolean;   // R9: proportional subtree shifting to fill gaps
+    crossLineageGrouping: boolean;  // R10: group cross-lineage trees
+    largestGroupFirst: boolean;     // R11: largest root group placed first
+    groupPacking: boolean;          // R12: bin-pack disconnected groups
+
+    // 🟠 Canvas-Level
+    layoutMode: 'standard' | 'hourglass'; // R13: layout strategy
+    showOrphans: boolean;           // R14: show orphan nodes in grid
+    normalizePositions: boolean;    // R15: normalize coordinates to top-left
 }
 
 export const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
     rankSep: 120,     // L1: vertical gap between generations
-    nodeSep: 20,      // L2: horizontal gap between sibling clusters
-    spouseGap: 20,    // L3: gap between spouses in a cluster
-    margin: 30,       // L4: canvas margin
-    minGap: 15,       // L5: minimum gap for collision resolution
+    nodeSep: 30,      // L2: horizontal gap between sibling clusters
+    spouseGap: 15,    // L3: gap between spouses in a cluster
+    margin: 50,       // L4: canvas margin
+    minGap: 20,       // L5: minimum gap for collision resolution
     orphanGap: 80,    // L6: gap before orphan section
-    treeGapMultiplier: 1.2,  // L7: multiplier for cross-lineage tree gap
+    treeGapMultiplier: 1.5,  // L7: multiplier for cross-lineage tree gap
     groupGapMultiplier: 3,   // L8: multiplier for unrelated group gap
-    siblingStackThreshold: 6,  // L9: grid layout threshold
+    siblingStackThreshold: 8,  // L9: grid layout threshold
 };
 
 export const DEFAULT_LAYOUT_RULES: LayoutRules = {
@@ -156,12 +192,35 @@ export const DEFAULT_LAYOUT_RULES: LayoutRules = {
     largestGroupFirst: true,
     showOrphans: true,
     normalizePositions: true,
-    compactApportioning: true,
+    compactApportioning: false,
     cycleBreaking: 'off',
     multiSpouseMode: 'chronological',
     generationAlignment: 'strict',
-    siblingStacking: true,
-    groupPacking: true,
+    siblingStacking: false,
+    groupPacking: false,
+    layoutMode: 'standard',
+};
+
+export interface EdgeSettings {
+    parentChildColor: string;     // E1: parent→child edge color
+    parentChildWidth: number;     // E2: parent→child stroke width
+    parentChildOpacity: number;   // E3: parent→child opacity
+    spouseColor: string;          // E4: spouse edge color
+    spouseWidth: number;          // E5: spouse stroke width
+    edgeType: 'default' | 'straight' | 'step' | 'smoothstep'; // E6: edge curve type
+    connectorStyle: 'individual' | 'fork' | 'elbow' | 'busbar'; // E7: family connector style
+    edgeBundling: boolean;        // E8: edge bundling
+}
+
+export const DEFAULT_EDGE_SETTINGS: EdgeSettings = {
+    parentChildColor: '#0d9488',
+    parentChildWidth: 1.8,
+    parentChildOpacity: 0.65,
+    spouseColor: '#dc2626',
+    spouseWidth: 2,
+    edgeType: 'default',
+    connectorStyle: 'individual',
+    edgeBundling: false,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1061,3 +1120,220 @@ export function calculateTreeLayout(
 
     return { positions: posMap, clones: cloneMap };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HOURGLASS ALGORITHM — Dual-phase layout from an Ego node
+// ═══════════════════════════════════════════════════════════════════════════════
+export function calculateHourglassLayout(
+    persons: Person[],
+    egoId: string,
+    collapsedIds: Set<string> = new Set(),
+    relationships: Relationship[] = [],
+    configOverride?: Partial<LayoutConfig>,
+    rulesOverride?: Partial<LayoutRules>
+): LayoutResult {
+    const config = { ...DEFAULT_LAYOUT_CONFIG, ...configOverride };
+
+    // Fallback to standard if no ego is provided
+    if (!egoId || persons.length === 0) {
+        return calculateTreeLayout(persons, collapsedIds, relationships, undefined, configOverride, rulesOverride);
+    }
+
+    const personsMap = new Map(persons.map(p => [p.personId, p]));
+    if (!personsMap.has(egoId)) {
+        return calculateTreeLayout(persons, collapsedIds, relationships, undefined, configOverride, rulesOverride);
+    }
+
+    // 1. Partition the graph into Ancestors vs Descendants relative to Ego
+    const ancestorIds = new Set<string>();
+    const descendantIds = new Set<string>();
+
+    // ── PRE-COMPUTE ROBUST SPOUSE & CO-PARENT LINKS ──
+    // To ensure Walker's algorithm correctly bundles parents together (even if unidirectional or unmarried in DB),
+    // we build a strict bi-directional spouse map that includes biological co-parents.
+    const biSpouseMap = new Map<string, Set<string>>();
+    persons.forEach(p => {
+        if (!biSpouseMap.has(p.personId)) biSpouseMap.set(p.personId, new Set());
+        // 1. Explicit spouses (make them bi-directional)
+        p.relationships.spouseIds.forEach(sid => {
+            biSpouseMap.get(p.personId)!.add(sid);
+            if (!biSpouseMap.has(sid)) biSpouseMap.set(sid, new Set());
+            biSpouseMap.get(sid)!.add(p.personId);
+        });
+
+        // 2. Implicit co-parents (if they share a child, they must be clustered as 'spouses' for layout)
+        if (p.relationships.parentIds.length > 1) {
+            const parents = p.relationships.parentIds;
+            for (let i = 0; i < parents.length; i++) {
+                for (let j = i + 1; j < parents.length; j++) {
+                    const p1 = parents[i];
+                    const p2 = parents[j];
+                    if (!biSpouseMap.has(p1)) biSpouseMap.set(p1, new Set());
+                    if (!biSpouseMap.has(p2)) biSpouseMap.set(p2, new Set());
+                    biSpouseMap.get(p1)!.add(p2);
+                    biSpouseMap.get(p2)!.add(p1);
+                }
+            }
+        }
+    });
+
+    // Trace Ancestors (upwards) — includes spouses of each ancestor
+    const ancestorQueue = [egoId];
+    while (ancestorQueue.length > 0) {
+        const curr = ancestorQueue.shift()!;
+        if (!ancestorIds.has(curr)) {
+            ancestorIds.add(curr);
+            const p = personsMap.get(curr);
+            if (p) {
+                p.relationships.parentIds.forEach(pid => {
+                    if (personsMap.has(pid)) ancestorQueue.push(pid);
+                });
+                // Include spouses of ancestors (using our robust map) so couples render together
+                const spouseSet = biSpouseMap.get(curr);
+                if (spouseSet) {
+                    spouseSet.forEach(sid => {
+                        if (personsMap.has(sid)) {
+                            // By pushing to ancestorQueue, spouses' parents are also drawn (creates a broader multi-bloodline graph)
+                            if (!ancestorIds.has(sid)) {
+                                ancestorQueue.push(sid);
+                            }
+                            ancestorIds.add(sid);
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    // Trace Descendants (downwards)
+    const descendantQueue = [egoId];
+    while (descendantQueue.length > 0) {
+        const curr = descendantQueue.shift()!;
+        if (!descendantIds.has(curr)) {
+            descendantIds.add(curr);
+            const p = personsMap.get(curr);
+            if (p) {
+                // include spouses of descendants
+                p.relationships.spouseIds.forEach(sid => descendantIds.add(sid));
+                if (!collapsedIds.has(curr)) {
+                    p.relationships.childIds.forEach(cid => descendantQueue.push(cid));
+                }
+            }
+        }
+    }
+
+    // Prepare persons for each half
+    // Ego's spouses are already included from the BFS above
+    const ego = personsMap.get(egoId)!;
+
+    const ancestorPersons = persons.filter(p => ancestorIds.has(p.personId));
+    // Remove children from ancestor persons so Walker's doesn't layout downwards
+    const ancestorPersonsCleaned = ancestorPersons.map(p => {
+        const isEgo = p.personId === egoId;
+        // REVERSE POLARITY: To perfectly layout Ancestors (a DAG going UP), 
+        // we swap parents and children so Walker's builds it as a standard tree going DOWN from Ego.
+        // - Ego becomes the absolute root (no parents)
+        // - Others' 'parents' in this layout are their actual children
+        // - Others' 'children' in this layout are their actual parents
+        const fakeParents = isEgo ? [] : p.relationships.childIds.filter(cid => ancestorIds.has(cid));
+        const fakeChildren = p.relationships.parentIds.filter(pid => ancestorIds.has(pid));
+
+        // Inject robust bi-directional and implicit co-parent spouse links
+        const fullSpouses = Array.from(biSpouseMap.get(p.personId) || []);
+
+        return {
+            ...p,
+            relationships: {
+                ...p.relationships,
+                parentIds: fakeParents,
+                childIds: fakeChildren,
+                spouseIds: fullSpouses
+            }
+        };
+    });
+
+    const descendantPersons = persons.filter(p => descendantIds.has(p.personId));
+    // Remove parents from descendant ego so Walker's treats them as root
+    const descendantPersonsCleaned = descendantPersons.map(p => {
+        const fullSpouses = Array.from(biSpouseMap.get(p.personId) || []);
+        if (p.personId === egoId || ego.relationships.spouseIds.includes(p.personId)) {
+            return { ...p, relationships: { ...p.relationships, parentIds: [], spouseIds: fullSpouses } };
+        }
+        return { ...p, relationships: { ...p.relationships, spouseIds: fullSpouses } };
+    });
+
+    // 2. Perform Layouts
+    // Ancestors: Laid out Top-Down from Ego using reversed polarity
+    const ancestorResult = calculateTreeLayout(
+        ancestorPersonsCleaned,
+        collapsedIds,
+        relationships,
+        undefined,
+        config,
+        rulesOverride
+    );
+
+    // Flip the Y-axis so Ancestors actually appear ABOVE Ego
+    ancestorResult.positions.forEach(pos => {
+        pos.y = -pos.y;
+    });
+
+    // Descendants: Standard Walker's also goes top-down.
+    const descendantResult = calculateTreeLayout(
+        descendantPersonsCleaned,
+        collapsedIds,
+        relationships,
+        undefined,
+        config,
+        rulesOverride
+    );
+
+    // 3. Merge Results
+    const finalPositions = new Map<string, NodePosition>();
+    const finalClones = new Map<string, string>();
+
+    const egoPosTop = ancestorResult.positions.get(egoId);
+    const egoPosBottom = descendantResult.positions.get(egoId);
+
+    if (!egoPosTop && !egoPosBottom) {
+        return { positions: finalPositions, clones: finalClones };
+    }
+
+    // Baseline coordinates based on Top Ego
+    const centerX = egoPosTop?.x || egoPosBottom?.x || 0;
+    const centerY = egoPosTop?.y || egoPosBottom?.y || 0;
+
+    // Shift Top Half to align Ego with baseline
+    if (egoPosTop) {
+        const shiftX = centerX - egoPosTop.x;
+        const shiftY = centerY - egoPosTop.y;
+
+        ancestorResult.positions.forEach((pos, id) => {
+            finalPositions.set(id, { ...pos, x: pos.x + shiftX, y: pos.y + shiftY });
+        });
+
+        ancestorResult.clones.forEach((oid, cid) => finalClones.set(cid, oid));
+    }
+
+    // Shift Bottom Half to align Ego with baseline + gap
+    if (egoPosBottom) {
+        const shiftX = centerX - egoPosBottom.x;
+        // if ego exists in both, snap exactly. Otherwise just position.
+        const shiftY = egoPosTop ? centerY - egoPosBottom.y : 0;
+
+        descendantResult.positions.forEach((pos, id) => {
+            // If it's already in top half (like Ego or Spouse), don't overwrite if it exists
+            if (!finalPositions.has(id)) {
+                finalPositions.set(id, { ...pos, x: pos.x + shiftX, y: pos.y + shiftY });
+            }
+        });
+        descendantResult.clones.forEach((oid, cid) => finalClones.set(cid, oid));
+    }
+
+    // Map any stragglers (unrelated branches/orphans)
+    // Stragglers are intentionally NOT added to finalPositions in Hourglass mode 
+    // so they are automatically hidden by the React Flow renderer.
+
+    return { positions: finalPositions, clones: finalClones };
+}
+

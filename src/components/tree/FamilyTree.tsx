@@ -33,9 +33,8 @@ import { MaleNode } from './nodes/MaleNode';
 import { FemaleNode } from './nodes/FemaleNode';
 import { JunctionNode } from './nodes/JunctionNode';
 import { BusBarEdge } from './edges/BusBarEdge';
-import { calculateTreeLayout, calculateSimplePosition, ViewportInfo, LayoutConfig, LayoutRules, LayoutResult } from '@/lib/layout/treeLayout';
+import { calculateTreeLayout, calculateHourglassLayout, calculateSimplePosition, ViewportInfo, LayoutConfig, LayoutRules, LayoutResult, DEFAULT_LAYOUT_RULES, DEFAULT_LAYOUT_CONFIG, DEFAULT_EDGE_SETTINGS } from '@/lib/layout/treeLayout';
 import { calculateMultiRootGenerations } from '@/lib/generation/calculator';
-import LayoutSettingsPanel, { EdgeSettings, DEFAULT_EDGE_SETTINGS } from './LayoutSettingsPanel';
 
 export interface FamilyTreeProps {
     persons: Person[];
@@ -104,7 +103,6 @@ function FamilyTreeInner({
     const [highlightedIds, setHighlightedIds] = useState<string[]>([]);
     const [ancestryPathIds, setAncestryPathIds] = useState<Set<string>>(new Set());
     const [hoveredPerson, setHoveredPerson] = useState<{ person: Person; x: number; y: number } | null>(null);
-    const [isArranging, setIsArranging] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const [exportPaperSize, setExportPaperSize] = useState<'A4' | 'A3' | 'A2' | 'A1' | 'A0'>('A3');
     const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
@@ -115,9 +113,6 @@ function FamilyTreeInner({
     const prevPersonCount = useRef(0);
     const positionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
     const clonesRef = useRef<Map<string, string>>(new Map());  // R11 clone mappings
-    const layoutConfigRef = useRef<Partial<LayoutConfig>>({});
-    const layoutRulesRef = useRef<Partial<LayoutRules>>({});
-    const edgeSettingsRef = useRef<EdgeSettings>({ ...DEFAULT_EDGE_SETTINGS });
 
     // Adaptive sizes
     const adaptiveSizes = useMemo(() => getAdaptiveSizes(persons.length), [persons.length]);
@@ -154,7 +149,7 @@ function FamilyTreeInner({
         prevPersonCount.current = currentCount;
     }, [persons.length]);
 
-    // Calculate dagre layout (cached)
+    // Calculate layout (cached)
     const getInitialDagreLayout = useCallback(() => {
         if (initialLayoutRef.current) return initialLayoutRef.current;
         const hasArrangedPositions = persons.some(p => p.position?.fixed === true);
@@ -162,12 +157,19 @@ function FamilyTreeInner({
             initialLayoutRef.current = { positions: new Map(), clones: new Map() };
             return initialLayoutRef.current;
         }
-        const genMap = calculateMultiRootGenerations(personsMap);
-        initialLayoutRef.current = calculateTreeLayout(persons, collapsedIds, relationships, genMap, layoutConfigRef.current, layoutRulesRef.current);
+
+        const currentRules = DEFAULT_LAYOUT_RULES;
+        if (currentRules.layoutMode === 'hourglass') {
+            const egoId = selectedPersonId || persons[0]?.personId;
+            initialLayoutRef.current = calculateHourglassLayout(persons, egoId, collapsedIds, relationships, DEFAULT_LAYOUT_CONFIG, DEFAULT_LAYOUT_RULES);
+        } else {
+            const genMap = calculateMultiRootGenerations(personsMap);
+            initialLayoutRef.current = calculateTreeLayout(persons, collapsedIds, relationships, genMap, DEFAULT_LAYOUT_CONFIG, DEFAULT_LAYOUT_RULES);
+        }
+
         clonesRef.current = initialLayoutRef.current.clones;
         return initialLayoutRef.current;
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [persons, personsMap, collapsedIds, relationships, selectedPersonId]);
 
     // Ancestry path tracing
     const traceAncestryPath = useCallback((personId: string): Set<string> => {
@@ -298,6 +300,8 @@ function FamilyTreeInner({
         // Single Bezier curve from husband to wife.
         // Junction node only used as invisible anchor for child edges.
         persons.forEach(person => {
+            if (!posMap.has(person.personId)) return; // Skip hidden/unmapped nodes
+
             person.relationships.spouseIds.forEach(spouseId => {
                 const coupleKey = [person.personId, spouseId].sort().join('-');
                 if (drawnPairs.has(coupleKey)) return;
@@ -313,15 +317,26 @@ function FamilyTreeInner({
                 const leftPos = pos1.x < pos2.x ? pos1 : pos2;
                 const rightPos = pos1.x < pos2.x ? pos2 : pos1;
 
-                // Single Bezier curve: left spouse → right spouse
+                // Determine spouse edge type — respect connector style (E7)
+                const spouseConnector = DEFAULT_EDGE_SETTINGS.connectorStyle;
+                let spouseEdgeType: string = DEFAULT_EDGE_SETTINGS.edgeType;
+                if (spouseConnector === 'busbar') {
+                    spouseEdgeType = 'step';             // Bus-bar: use step for spouse (busbar only for parent-child)
+                } else if (spouseConnector === 'fork') {
+                    spouseEdgeType = 'step';             // Fork: right-angle
+                } else if (spouseConnector === 'elbow') {
+                    spouseEdgeType = 'smoothstep';       // Elbow: rounded step
+                }
+
+                // Spouse edge: left spouse → right spouse
                 rfEdges.push({
                     id: `spouse-${coupleKey}`,
                     source: leftId,
                     target: rightId,
                     sourceHandle: 'right',
                     targetHandle: 'left',
-                    type: edgeSettingsRef.current.edgeType,
-                    style: { stroke: edgeSettingsRef.current.spouseColor, strokeWidth: edgeSettingsRef.current.spouseWidth },
+                    type: spouseEdgeType,
+                    style: { stroke: DEFAULT_EDGE_SETTINGS.spouseColor, strokeWidth: DEFAULT_EDGE_SETTINGS.spouseWidth },
                 });
 
                 // Invisible junction node at midpoint (only for child edge routing)
@@ -344,6 +359,7 @@ function FamilyTreeInner({
         // ── Build parent-child edges ──
         // Children connect FROM the couple's junction node (not from individual parents)
         persons.forEach(person => {
+            if (!posMap.has(person.personId)) return; // Skip hidden/unmapped nodes
             if (person.relationships.parentIds.length === 0) return;
 
             const parentIds = person.relationships.parentIds.filter(pid => posMap.has(pid));
@@ -359,8 +375,8 @@ function FamilyTreeInner({
                 parentIds.some(pid => currentAncestryPath.has(pid));
 
             // E7: Determine edge type based on connector style
-            const connectorStyle = edgeSettingsRef.current.connectorStyle;
-            let parentChildEdgeType: string = edgeSettingsRef.current.edgeType;
+            const connectorStyle = DEFAULT_EDGE_SETTINGS.connectorStyle;
+            let parentChildEdgeType: string = DEFAULT_EDGE_SETTINGS.edgeType;
             if (connectorStyle === 'busbar') {
                 parentChildEdgeType = 'busbar';      // Orthogonal bus-bar (custom)
             } else if (connectorStyle === 'fork') {
@@ -370,9 +386,9 @@ function FamilyTreeInner({
             }
 
             const edgeStyle = {
-                stroke: isOnPath ? '#f59e0b' : edgeSettingsRef.current.parentChildColor,
-                strokeWidth: isOnPath ? 3 : edgeSettingsRef.current.parentChildWidth,
-                opacity: currentAncestryPath.size > 0 ? (isOnPath ? 1 : 0.25) : edgeSettingsRef.current.parentChildOpacity,
+                stroke: isOnPath ? '#f59e0b' : DEFAULT_EDGE_SETTINGS.parentChildColor,
+                strokeWidth: isOnPath ? 3 : DEFAULT_EDGE_SETTINGS.parentChildWidth,
+                opacity: currentAncestryPath.size > 0 ? (isOnPath ? 1 : Math.min(DEFAULT_EDGE_SETTINGS.parentChildOpacity, 0.3)) : DEFAULT_EDGE_SETTINGS.parentChildOpacity,
             };
 
             // If child has 2 parents that form a couple, connect from junction
@@ -411,7 +427,7 @@ function FamilyTreeInner({
         // ── P3a: Edge Bundling (E8) ──
         // When enabled, merge parent-child edges from same source that target
         // children at similar X positions into fewer, thicker bundled edges.
-        if (edgeSettingsRef.current.edgeBundling) {
+        if (DEFAULT_EDGE_SETTINGS.edgeBundling) {
             const bundleThreshold = 60; // px proximity for bundling
             // Group edges by source node
             const edgesBySource = new Map<string, Edge[]>();
@@ -691,46 +707,6 @@ function FamilyTreeInner({
         setHighlightedIds([personId]);
     }, [reactFlowInstance]);
 
-    // Auto arrange
-    const handleAutoArrange = useCallback(async () => {
-        if (!familyId) return;
-        setIsArranging(true);
-
-        setTimeout(async () => {
-            try {
-                const genMap = calculateMultiRootGenerations(personsMap);
-                const layoutResult = calculateTreeLayout(persons, collapsedIds, relationships, genMap, layoutConfigRef.current, layoutRulesRef.current);
-                const newPositions = layoutResult.positions;
-                clonesRef.current = layoutResult.clones;
-                positionsRef.current = newPositions;
-
-                const { rfNodes, rfEdges } = buildNodesAndEdges(
-                    newPositions,
-                    selectedPersonId,
-                    highlightedSet,
-                    ancestryPathIds,
-                    scriptMode || 'both',
-                    adaptiveSizes,
-                );
-
-                setNodes(rfNodes);
-                setEdges(rfEdges);
-
-                setTimeout(() => {
-                    reactFlowInstance.fitView({ padding: 0.15, duration: 500 });
-                }, 50);
-
-                if (onAllPositionsChange) {
-                    await onAllPositionsChange(newPositions);
-                }
-            } catch (error) {
-                console.error('Failed to arrange:', error);
-            } finally {
-                setIsArranging(false);
-            }
-        }, 300);
-    }, [persons, collapsedIds, relationships, familyId, onAllPositionsChange, buildNodesAndEdges,
-        selectedPersonId, highlightedSet, ancestryPathIds, scriptMode, adaptiveSizes, setNodes, setEdges, reactFlowInstance]);
 
     // ── Paper sizes in mm (portrait) ──
     const PAPER_SIZES: Record<string, { w: number; h: number }> = {
@@ -1067,18 +1043,6 @@ function FamilyTreeInner({
                         >
                             {isExporting ? '⏳' : '🖨️'} <span className="hidden sm:inline">PDF</span>
                         </button>
-                        <div className="w-px bg-stone-200 mx-0.5"></div>
-                        <button
-                            onClick={handleAutoArrange}
-                            disabled={isArranging}
-                            className={`px-3 md:px-4 h-8 md:h-9 flex items-center justify-center gap-1.5 rounded text-xs md:text-sm font-medium border transition-colors ${isArranging ? 'bg-teal-100 text-teal-700 border-teal-300 cursor-wait'
-                                : 'hover:bg-teal-50 text-teal-600 border-teal-200 bg-white'
-                                }`}
-                            title="Auto rapikan layout"
-                            type="button"
-                        >
-                            {isArranging ? '⏳' : '✨'} <span className="hidden sm:inline">Rapihkan</span>
-                        </button>
                     </div>
                 </div>
 
@@ -1159,7 +1123,7 @@ function FamilyTreeInner({
                     maxZoom={3}
                     attributionPosition="bottom-right"
                     defaultEdgeOptions={{
-                        type: 'default', // Bezier curves
+                        type: DEFAULT_EDGE_SETTINGS.edgeType,
                     }}
                     style={{ background: '#fafaf9' }}
                     proOptions={{ hideAttribution: true }}
@@ -1242,17 +1206,6 @@ function FamilyTreeInner({
                 </div>
             </div>
 
-            {/* Layout Settings Panel */}
-            <LayoutSettingsPanel
-                onApply={(config, rules, edge) => {
-                    layoutConfigRef.current = config;
-                    layoutRulesRef.current = rules;
-                    edgeSettingsRef.current = edge;
-                    // Trigger re-layout
-                    initialLayoutRef.current = null;
-                    handleAutoArrange();
-                }}
-            />
 
         </div>
     );

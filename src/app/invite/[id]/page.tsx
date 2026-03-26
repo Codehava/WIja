@@ -115,11 +115,14 @@ export default function AcceptInvitationPage() {
                         <p className="text-stone-600 mb-6">
                             Anda perlu login untuk menerima undangan ini.
                         </p>
-                        <Link href={`/login?redirect=/invite/${invitationId}`}>
-                            <Button className="w-full">
-                                Login / Daftar
-                            </Button>
-                        </Link>
+                        <Button
+                            className="w-full"
+                            onClick={() => {
+                                window.location.href = `/api/auth/signin?callbackUrl=${encodeURIComponent(`/invite/${invitationId}`)}`;
+                            }}
+                        >
+                            Login / Daftar
+                        </Button>
                     </CardBody>
                 </Card>
             </div>
