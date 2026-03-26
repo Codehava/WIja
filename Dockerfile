@@ -38,6 +38,8 @@ COPY . .
 # Build Next.js with standalone output
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+# Limit max memory to 1024MB to prevent Out-Of-Memory (OOM) on small VPS
+ENV NODE_OPTIONS="--max_old_space_size=1024"
 RUN npm run build
 
 # ─── Stage 3: Production runner ──────────────────────────────────────────────

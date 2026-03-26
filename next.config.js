@@ -3,6 +3,10 @@ const nextConfig = {
     output: 'standalone',
     reactStrictMode: true,
     // Skip type check & lint in Docker build (verified locally before push)
+    experimental: {
+        workerThreads: false,
+        cpus: 1
+    },
     typescript: { ignoreBuildErrors: true },
     eslint: { ignoreDuringBuilds: true },
     images: {
