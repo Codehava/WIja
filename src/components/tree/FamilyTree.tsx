@@ -112,7 +112,7 @@ function FamilyTreeInner({
     const prevPersonCount = useRef(0);
     const positionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
     const clonesRef = useRef<Map<string, string>>(new Map());  // R11 clone mappings
-    const draggingNodeIdRef = useRef<string | null>(null);
+    const draggingNodeIdsRef = useRef<Set<string>>(new Set());
     const lastDraggedTimeRef = useRef<Map<string, number>>(new Map());
 
     // Adaptive sizes
@@ -584,7 +584,7 @@ function FamilyTreeInner({
                     // Sync positions from server if they exist and are fixed
                     const currentPos = posMap.get(p.personId);
                     const serverPos = savedPositions.get(p.personId);
-                    const isDragging = draggingNodeIdRef.current === p.personId;
+                    const isDragging = draggingNodeIdsRef.current.has(p.personId);
                     const lastDragged = lastDraggedTimeRef.current.get(p.personId) || 0;
                     const recentlyDragged = Date.now() - lastDragged < 5000; // 5 second cooldown
                     
@@ -693,17 +693,35 @@ function FamilyTreeInner({
     }, [onNodesChange, personsMap, adaptiveSizes, setNodes]);
 
     const handleNodeDragStart = useCallback((_event: React.MouseEvent, node: Node) => {
-        draggingNodeIdRef.current = node.id;
+        draggingNodeIdsRef.current.add(node.id);
     }, []);
 
     // Save positions after drag ends
     const handleNodeDragStop = useCallback((_event: React.MouseEvent, node: Node) => {
-        draggingNodeIdRef.current = null;
+        draggingNodeIdsRef.current.delete(node.id);
         lastDraggedTimeRef.current.set(node.id, Date.now());
         if (onPositionChange) {
             onPositionChange(node.id, { x: node.position.x, y: node.position.y });
         }
     }, [onPositionChange]);
+
+    const handleSelectionDragStart = useCallback((_event: React.MouseEvent, nodes: Node[]) => {
+        nodes.forEach(n => draggingNodeIdsRef.current.add(n.id));
+    }, []);
+
+    const handleSelectionDragStop = useCallback((_event: React.MouseEvent, nodes: Node[]) => {
+        const positionsToUpdate = new Map<string, { x: number; y: number }>();
+        const now = Date.now();
+        nodes.forEach(node => {
+            draggingNodeIdsRef.current.delete(node.id);
+            lastDraggedTimeRef.current.set(node.id, now);
+            positionsToUpdate.set(node.id, { x: node.position.x, y: node.position.y });
+        });
+
+        if (onAllPositionsChange && positionsToUpdate.size > 0) {
+            onAllPositionsChange(positionsToUpdate);
+        }
+    }, [onAllPositionsChange]);
 
     // Handle node click
     const handleNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
@@ -1134,6 +1152,8 @@ function FamilyTreeInner({
                     onNodeClick={handleNodeClick}
                     onNodeDragStart={handleNodeDragStart}
                     onNodeDragStop={handleNodeDragStop}
+                    onSelectionDragStart={handleSelectionDragStart}
+                    onSelectionDragStop={handleSelectionDragStop}
                     onPaneClick={handlePaneClick}
                     onMoveEnd={(_, viewport) => {
                         // P3b: LOD — compute detail level from zoom
