@@ -41,7 +41,7 @@ const DIAKRITIK: Record<string, string> = {
     'i': 'ᨗ',   // U+1A17
     'u': 'ᨘ',   // U+1A18
     'e': 'ᨙ',   // U+1A19 - e taling
-    'é': 'ᨙ',   // U+1A19 - e taling eksplisit (user input)
+    'é': 'ᨛ',   // U+1A1B - e pepet eksklusif user input
     'o': 'ᨚ',   // U+1A1A
     'ə': 'ᨛ',   // U+1A1B - pepet
 };
@@ -102,8 +102,8 @@ const VOKAL_AKHIR_HARMONI = new Set(['s', 'p']);
 function normalisasi(text: string): string {
     let result = text.toLowerCase();
 
-    // Pertahankan é (e-taling eksplisit) - konversi ke marker sementara
-    result = result.replace(/é/g, 'E_TALING');
+    // Jadikan é sebagai variasi e-pepet (sama seperti ə)
+    result = result.replace(/é/g, 'ə');
 
     // Pertahankan glottal stop/hamzah
     // ' di tengah kata tetap dipertahankan untuk diproses
@@ -122,9 +122,6 @@ function normalisasi(text: string): string {
 
     // Konsonan ganda → tunggal (mm→m, ss→s, ll→l, dll)
     result = result.replace(/(.)\1+/g, '$1');
-
-    // Kembalikan marker e-taling
-    result = result.replace(/E_TALING/g, 'é');
 
     return result;
 }
